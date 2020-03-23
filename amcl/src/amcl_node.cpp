@@ -49,6 +49,7 @@
 #include "nav_msgs/GetMap.h"
 #include "nav_msgs/SetMap.h"
 #include "std_srvs/Empty.h"
+#include "std_msgs/Int32.h"
 #include "jsk_recognition_msgs/PolygonArray.h"
 
 // For transform support
@@ -243,6 +244,7 @@ class AmclNode
     ros::Subscriber initial_pose_sub_old_;
     ros::Subscriber map_sub_;
     ros::Subscriber zones_sub_;
+    ros::Subscriber predicted_zone_sub_;
 
     amcl_hyp_t* initial_pose_hyp_;
     bool first_map_received_;
@@ -276,9 +278,12 @@ class AmclNode
 
 		// Zones
 		std::string zones_topic_;
+		std::string predicted_zone_topic_;
     bool use_zones_;
+		std_msgs::Int32 last_zone_;
 		jsk_recognition_msgs::PolygonArrayConstPtr zones_;
 		void zonesReceived(const jsk_recognition_msgs::PolygonArrayConstPtr& zones);
+		void predictedZoneReceived(const std_msgs::Int32ConstPtr& zone);
 };
 
 std::vector<std::pair<int,int> > AmclNode::free_space_indices;
@@ -435,6 +440,7 @@ AmclNode::AmclNode() :
 	// Retrieve public zones parameters
 	nh_.param<bool>("use_zones", use_zones_, true);
 	nh_.param<std::string>("zones_topic", zones_topic_, "zone_classifier/zones");
+	nh_.param<std::string>("predicted_zone_topic", predicted_zone_topic_, "zone_classifier/predicted_zone");
 
   transform_tolerance_.fromSec(tmp_tol);
 
@@ -487,6 +493,7 @@ AmclNode::AmclNode() :
 
 	// Zones subscriber
 	zones_sub_ = nh_.subscribe(zones_topic_, 1, &AmclNode::zonesReceived, this);
+	predicted_zone_sub_ = nh_.subscribe(predicted_zone_topic_, 1, &AmclNode::predictedZoneReceived, this);
 }
 
 void AmclNode::reconfigureCB(AMCLConfig &config, uint32_t level)
@@ -1572,4 +1579,10 @@ void
 AmclNode::zonesReceived(const jsk_recognition_msgs::PolygonArrayConstPtr& zones)
 {
 	zones_ = zones;
+}
+
+void
+AmclNode::predictedZoneReceived(const std_msgs::Int32ConstPtr& zone)
+{
+	last_zone_ = *zone;
 }
