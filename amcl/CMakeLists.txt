@@ -11,6 +11,7 @@ find_package(catkin REQUIRED
             dynamic_reconfigure
             nav_msgs
             std_srvs
+						jsk_recognition_msgs
         )
 
 find_package(Boost REQUIRED)
@@ -26,7 +27,7 @@ catkin_package(
         roscpp
         dynamic_reconfigure
         tf
-  CATKIN_DEPENDS nav_msgs std_srvs
+  CATKIN_DEPENDS nav_msgs std_srvs jsk_recognition_msgs
   INCLUDE_DIRS include
   LIBRARIES amcl_sensors amcl_map amcl_pf
 )

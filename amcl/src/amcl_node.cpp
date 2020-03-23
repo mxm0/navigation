@@ -49,6 +49,7 @@
 #include "nav_msgs/GetMap.h"
 #include "nav_msgs/SetMap.h"
 #include "std_srvs/Empty.h"
+#include "jsk_recognition_msgs/PolygonArray.h"
 
 // For transform support
 #include "tf/transform_broadcaster.h"
@@ -241,6 +242,7 @@ class AmclNode
     ros::ServiceServer set_map_srv_;
     ros::Subscriber initial_pose_sub_old_;
     ros::Subscriber map_sub_;
+    ros::Subscriber zones_sub_;
 
     amcl_hyp_t* initial_pose_hyp_;
     bool first_map_received_;
@@ -271,6 +273,12 @@ class AmclNode
     ros::Time last_laser_received_ts_;
     ros::Duration laser_check_interval_;
     void checkLaserReceived(const ros::TimerEvent& event);
+
+		// Zones
+		std::string zones_topic_;
+    bool use_zones_;
+		jsk_recognition_msgs::PolygonArrayConstPtr zones_;
+		void zonesReceived(const jsk_recognition_msgs::PolygonArrayConstPtr& zones);
 };
 
 std::vector<std::pair<int,int> > AmclNode::free_space_indices;
@@ -424,6 +432,10 @@ AmclNode::AmclNode() :
   private_nh_.param("recovery_alpha_fast", alpha_fast_, 0.1);
   private_nh_.param("tf_broadcast", tf_broadcast_, true);
 
+	// Retrieve public zones parameters
+	nh_.param<bool>("use_zones", use_zones_, true);
+	nh_.param<std::string>("zones_topic", zones_topic_, "zone_classifier/zones");
+
   transform_tolerance_.fromSec(tmp_tol);
 
   {
@@ -472,6 +484,9 @@ AmclNode::AmclNode() :
   laser_check_interval_ = ros::Duration(15.0);
   check_laser_timer_ = nh_.createTimer(laser_check_interval_, 
                                        boost::bind(&AmclNode::checkLaserReceived, this, _1));
+
+	// Zones subscriber
+	zones_sub_ = nh_.subscribe(zones_topic_, 1, &AmclNode::zonesReceived, this);
 }
 
 void AmclNode::reconfigureCB(AMCLConfig &config, uint32_t level)
@@ -1551,4 +1566,10 @@ AmclNode::applyInitialPose()
     delete initial_pose_hyp_;
     initial_pose_hyp_ = NULL;
   }
+}
+
+void
+AmclNode::zonesReceived(const jsk_recognition_msgs::PolygonArrayConstPtr& zones)
+{
+	zones_ = zones;
 }
