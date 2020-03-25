@@ -32,6 +32,7 @@
 #include <signal.h>
 
 #include "amcl/map/map.h"
+#include "amcl/area/area.h"
 #include "amcl/pf/pf.h"
 #include "amcl/sensors/amcl_odom.h"
 #include "amcl/sensors/amcl_laser.h"
@@ -46,11 +47,12 @@
 #include "geometry_msgs/PoseWithCovarianceStamped.h"
 #include "geometry_msgs/PoseArray.h"
 #include "geometry_msgs/Pose.h"
+#include "geometry_msgs/PolygonStamped.h"
 #include "nav_msgs/GetMap.h"
 #include "nav_msgs/SetMap.h"
 #include "std_srvs/Empty.h"
 #include "std_msgs/Int32.h"
-#include "jsk_recognition_msgs/PolygonArray.h"
+#include "robot_localizer/GetZones.h"
 
 // For transform support
 #include "tf/transform_broadcaster.h"
@@ -280,10 +282,12 @@ class AmclNode
 		std::string zones_topic_;
 		std::string predicted_zone_topic_;
     bool use_zones_;
-		std_msgs::Int32 last_zone_;
-		jsk_recognition_msgs::PolygonArrayConstPtr zones_;
-		void zonesReceived(const jsk_recognition_msgs::PolygonArrayConstPtr& zones);
+		int max_zone_particles_;
+		area_t* area_;
+		void requestZones();
 		void predictedZoneReceived(const std_msgs::Int32ConstPtr& zone);
+    static pf_vector_t zonePoseGenerator(void* arg_map, void* arg_area);
+    area_t* convertZones(const std::vector<geometry_msgs::PolygonStamped>& zone_msg);
 };
 
 std::vector<std::pair<int,int> > AmclNode::free_space_indices;
@@ -441,6 +445,7 @@ AmclNode::AmclNode() :
 	nh_.param<bool>("use_zones", use_zones_, true);
 	nh_.param<std::string>("zones_topic", zones_topic_, "zone_classifier/zones");
 	nh_.param<std::string>("predicted_zone_topic", predicted_zone_topic_, "zone_classifier/predicted_zone");
+  private_nh_.param("max_zone_particles", max_zone_particles_, 100);
 
   transform_tolerance_.fromSec(tmp_tol);
 
@@ -491,9 +496,11 @@ AmclNode::AmclNode() :
   check_laser_timer_ = nh_.createTimer(laser_check_interval_, 
                                        boost::bind(&AmclNode::checkLaserReceived, this, _1));
 
-	// Zones subscriber
-	zones_sub_ = nh_.subscribe(zones_topic_, 1, &AmclNode::zonesReceived, this);
-	predicted_zone_sub_ = nh_.subscribe(predicted_zone_topic_, 1, &AmclNode::predictedZoneReceived, this);
+	// Zones
+	if(use_zones_) {
+		requestZones();
+		predicted_zone_sub_ = nh_.subscribe(predicted_zone_topic_, 1, &AmclNode::predictedZoneReceived, this);
+	}
 }
 
 void AmclNode::reconfigureCB(AMCLConfig &config, uint32_t level)
@@ -575,10 +582,13 @@ void AmclNode::reconfigureCB(AMCLConfig &config, uint32_t level)
   beam_skip_distance_ = config.beam_skip_distance; 
   beam_skip_threshold_ = config.beam_skip_threshold; 
 
-  pf_ = pf_alloc(min_particles_, max_particles_,
+	// TODO: Pass zones to pf
+  pf_ = pf_alloc(min_particles_, max_particles_, max_zone_particles_,
                  alpha_slow_, alpha_fast_,
                  (pf_init_model_fn_t)AmclNode::uniformPoseGenerator,
-                 (void *)map_);
+                 (void *)map_,
+								 (pf_zone_model_fn_t)AmclNode::zonePoseGenerator,
+								 (void *) area_);
   pf_set_selective_resampling(pf_, selective_resampling_);
   pf_err_ = config.kld_err; 
   pf_z_ = config.kld_z; 
@@ -865,6 +875,7 @@ AmclNode::handleMapMessage(const nav_msgs::OccupancyGrid& msg)
 
   map_ = convertMap(msg);
 
+
 #if NEW_UNIFORM_SAMPLING
   // Index of free space
   free_space_indices.resize(0);
@@ -874,10 +885,13 @@ AmclNode::handleMapMessage(const nav_msgs::OccupancyGrid& msg)
         free_space_indices.push_back(std::make_pair(i,j));
 #endif
   // Create the particle filter
-  pf_ = pf_alloc(min_particles_, max_particles_,
+	// TODO: Pass zones to pf
+  pf_ = pf_alloc(min_particles_, max_particles_, max_zone_particles_,
                  alpha_slow_, alpha_fast_,
                  (pf_init_model_fn_t)AmclNode::uniformPoseGenerator,
-                 (void *)map_);
+                 (void *)map_,
+								 (pf_zone_model_fn_t)AmclNode::zonePoseGenerator,
+								 (void*) area_);
   pf_set_selective_resampling(pf_, selective_resampling_);
   pf_->pop_err = pf_err_;
   pf_->pop_z = pf_z_;
@@ -1050,6 +1064,38 @@ AmclNode::uniformPoseGenerator(void* arg)
       break;
   }
 #endif
+  return p;
+}
+
+pf_vector_t
+AmclNode::zonePoseGenerator(void* arg_map, void* arg_area)
+{
+  map_t* map = (map_t*)arg_map;
+	area_t* area = (area_t*)arg_area;
+
+  double min_x, max_x, min_y, max_y;
+
+  min_x = area->zones[area->active_zone].min_x;
+  max_x = area->zones[area->active_zone].max_x;
+  min_y = area->zones[area->active_zone].min_y;
+  max_y = area->zones[area->active_zone].max_y;
+
+  pf_vector_t p;
+
+  ROS_DEBUG("Generating new zone sample");
+  for(;;)
+  {
+    p.v[0] = min_x + drand48() * (max_x - min_x);
+    p.v[1] = min_y + drand48() * (max_y - min_y);
+    p.v[2] = drand48() * 2 * M_PI - M_PI;
+    // Check that it's a free cell
+    int i,j;
+    i = MAP_GXWX(map, p.v[0]);
+    j = MAP_GYWY(map, p.v[1]);
+    if(MAP_VALID(map,i,j) && (map->cells[MAP_INDEX(map,i,j)].occ_state == -1))
+      break;
+  }
+
   return p;
 }
 
@@ -1285,7 +1331,7 @@ AmclNode::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan)
     // Resample the particles
     if(!(++resample_count_ % resample_interval_))
     {
-      pf_update_resample(pf_);
+      pf_update_resample(pf_); // TODO: Add samples from predicted zone
       resampled = true;
     }
 
@@ -1576,13 +1622,43 @@ AmclNode::applyInitialPose()
 }
 
 void
-AmclNode::zonesReceived(const jsk_recognition_msgs::PolygonArrayConstPtr& zones)
+AmclNode::requestZones()
 {
-	zones_ = zones;
+  robot_localizer::GetZones::Request  req;
+  robot_localizer::GetZones::Response resp;
+  ROS_INFO("Requesting zones...");
+  while(!ros::service::call("get_zones", req, resp))
+  {
+    ROS_WARN("Request for zones failed; trying again...");
+    ros::Duration d(0.5);
+    d.sleep();
+  }
+	ROS_INFO("Received zones");
+
+	area_ = convertZones(resp.zones);
+}
+
+area_t*
+AmclNode::convertZones(const std::vector<geometry_msgs::PolygonStamped>& zones_msg)
+{
+	//TODO: Store zones and respective coordinates for min/max
+  area_t* area = area_alloc();
+  area->zones = (zone_t*)malloc(sizeof(zone_t)*zones_msg.size());
+
+	// NOTE: We assume the zone is always a rectangle!!
+  for(int i = 0; i < zones_msg.size(); i++)
+	{
+		area->zones[i].min_x = zones_msg[i].polygon.points[0].x;
+		area->zones[i].max_x = zones_msg[i].polygon.points[2].x;
+		area->zones[i].min_y = zones_msg[i].polygon.points[0].y;
+		area->zones[i].max_y = zones_msg[i].polygon.points[2].y;
+	}
+
+	return area;
 }
 
 void
 AmclNode::predictedZoneReceived(const std_msgs::Int32ConstPtr& zone)
 {
-	last_zone_ = *zone;
+	area_->active_zone = zone->data;
 }

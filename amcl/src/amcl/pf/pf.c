@@ -42,9 +42,10 @@ static int pf_resample_limit(pf_t *pf, int k);
 
 
 // Create a new filter
-pf_t *pf_alloc(int min_samples, int max_samples,
+pf_t *pf_alloc(int min_samples, int max_samples, int max_zone_samples,
                double alpha_slow, double alpha_fast,
-               pf_init_model_fn_t random_pose_fn, void *random_pose_data)
+               pf_init_model_fn_t random_pose_fn, void *random_pose_data,
+							 pf_zone_model_fn_t zone_pose_fn, void *zone_pose_data)
 {
   int i, j;
   pf_t *pf;
@@ -57,9 +58,12 @@ pf_t *pf_alloc(int min_samples, int max_samples,
 
   pf->random_pose_fn = random_pose_fn;
   pf->random_pose_data = random_pose_data;
+  pf->zone_pose_fn = zone_pose_fn;
+  pf->zone_pose_data = zone_pose_data;
 
   pf->min_samples = min_samples;
   pf->max_samples = max_samples;
+  pf->max_zone_samples = max_zone_samples;
 
   // Control parameters for the population size calculation.  [err] is
   // the max error between the true distribution and the estimated
@@ -477,6 +481,8 @@ void pf_update_resample(pf_t *pf)
     if (set_b->sample_count > pf_resample_limit(pf, set_b->kdtree->leaf_count))
       break;
   }
+
+	//TODO: Sample from zone area and assign pose to sample_b
   
   // Reset averages, to avoid spiraling off into complete randomness.
   if(w_diff > 0.0)

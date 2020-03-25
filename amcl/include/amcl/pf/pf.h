@@ -44,6 +44,11 @@ struct _pf_sample_set_t;
 // an appropriate distribution.
 typedef pf_vector_t (*pf_init_model_fn_t) (void *init_data);
 
+// Function prototype for the zone model; generates a sample pose from
+// a zone.
+typedef pf_vector_t (*pf_zone_model_fn_t) (void *init_data,
+																					 void *zone_data);
+
 // Function prototype for the action model; generates a sample pose from
 // an appropriate distribution
 typedef void (*pf_action_model_fn_t) (void *action_data, 
@@ -112,7 +117,7 @@ typedef struct _pf_sample_set_t
 typedef struct _pf_t
 {
   // This min and max number of samples
-  int min_samples, max_samples;
+  int min_samples, max_samples, max_zone_samples;
 
   // Population size parameters
   double pop_err, pop_z;
@@ -132,6 +137,11 @@ typedef struct _pf_t
   pf_init_model_fn_t random_pose_fn;
   void *random_pose_data;
 
+	// Function used to draw a random pose sample from
+	// a specific area in the map
+	pf_zone_model_fn_t zone_pose_fn;
+  void *zone_pose_data;
+
   double dist_threshold; //distance threshold in each axis over which the pf is considered to not be converged
   int converged; 
 
@@ -141,9 +151,10 @@ typedef struct _pf_t
 
 
 // Create a new filter
-pf_t *pf_alloc(int min_samples, int max_samples,
+pf_t *pf_alloc(int min_samples, int max_samples, int max_zone_samples,
                double alpha_slow, double alpha_fast,
-               pf_init_model_fn_t random_pose_fn, void *random_pose_data);
+               pf_init_model_fn_t random_pose_fn, void *random_pose_data,
+							 pf_zone_model_fn_t zone_pose_fn, void *zone_pose_data);
 
 // Free an existing filter
 void pf_free(pf_t *pf);

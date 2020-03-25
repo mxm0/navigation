@@ -11,7 +11,7 @@ find_package(catkin REQUIRED
             dynamic_reconfigure
             nav_msgs
             std_srvs
-						jsk_recognition_msgs
+						robot_localizer
         )
 
 find_package(Boost REQUIRED)
@@ -27,7 +27,7 @@ catkin_package(
         roscpp
         dynamic_reconfigure
         tf
-  CATKIN_DEPENDS nav_msgs std_srvs jsk_recognition_msgs
+  CATKIN_DEPENDS nav_msgs std_srvs robot_localizer
   INCLUDE_DIRS include
   LIBRARIES amcl_sensors amcl_map amcl_pf
 )
@@ -54,7 +54,10 @@ add_library(amcl_sensors
                     src/amcl/sensors/amcl_sensor.cpp
                     src/amcl/sensors/amcl_odom.cpp
                     src/amcl/sensors/amcl_laser.cpp)
-target_link_libraries(amcl_sensors amcl_map amcl_pf)
+
+add_library(amcl_area
+                    src/amcl/area/area.c)
+target_link_libraries(amcl_sensors amcl_map amcl_area amcl_pf)
 
 
 add_executable(amcl
