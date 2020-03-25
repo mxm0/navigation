@@ -1109,7 +1109,9 @@ AmclNode::globalLocalizationCallback(std_srvs::Empty::Request& req,
   boost::recursive_mutex::scoped_lock gl(configuration_mutex_);
   ROS_INFO("Initializing with uniform distribution");
   pf_init_model(pf_, (pf_init_model_fn_t)AmclNode::uniformPoseGenerator,
-                (void *)map_);
+								(pf_zone_model_fn_t)AmclNode::zonePoseGenerator,
+                (void *)map_,
+								(void *)area_);
   ROS_INFO("Global initialisation done!");
   pf_init_ = false;
   return true;

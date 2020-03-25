@@ -96,6 +96,7 @@ typedef struct _pf_sample_set_t
 {
   // The samples
   int sample_count;
+  int zone_sample_count;
   pf_sample_t *samples;
 
   // A kdtree encoding the histogram
@@ -163,7 +164,7 @@ void pf_free(pf_t *pf);
 void pf_init(pf_t *pf, pf_vector_t mean, pf_matrix_t cov);
 
 // Initialize the filter using some model
-void pf_init_model(pf_t *pf, pf_init_model_fn_t init_fn, void *init_data);
+void pf_init_model(pf_t *pf, pf_init_model_fn_t init_fn, pf_zone_model_fn_t zone_fn, void *init_data, void *zone_data);
 
 // Update the filter with some new action
 void pf_update_action(pf_t *pf, pf_action_model_fn_t action_fn, void *action_data);

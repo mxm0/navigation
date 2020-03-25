@@ -80,7 +80,7 @@ pf_t *pf_alloc(int min_samples, int max_samples, int max_zone_samples,
     set = pf->sets + j;
       
     set->sample_count = max_samples;
-    set->samples = calloc(max_samples, sizeof(pf_sample_t));
+    set->samples = calloc(max_samples + max_zone_samples, sizeof(pf_sample_t));
 
     for (i = 0; i < set->sample_count; i++)
     {
@@ -88,14 +88,14 @@ pf_t *pf_alloc(int min_samples, int max_samples, int max_zone_samples,
       sample->pose.v[0] = 0.0;
       sample->pose.v[1] = 0.0;
       sample->pose.v[2] = 0.0;
-      sample->weight = 1.0 / max_samples;
+      sample->weight = 1.0 / max_samples + max_zone_samples;
     }
 
     // HACK: is 3 times max_samples enough?
-    set->kdtree = pf_kdtree_alloc(3 * max_samples);
+    set->kdtree = pf_kdtree_alloc(3 * max_samples + max_zone_samples);
 
     set->cluster_count = 0;
-    set->cluster_max_count = max_samples;
+    set->cluster_max_count = max_samples + max_zone_samples;
     set->clusters = calloc(set->cluster_max_count, sizeof(pf_cluster_t));
 
     set->mean = pf_vector_zero();
@@ -151,7 +151,7 @@ void pf_init(pf_t *pf, pf_vector_t mean, pf_matrix_t cov)
   for (i = 0; i < set->sample_count; i++)
   {
     sample = set->samples + i;
-    sample->weight = 1.0 / pf->max_samples;
+    sample->weight = 1.0 / pf->max_samples + pf->max_zone_samples;
     sample->pose = pf_pdf_gaussian_sample(pdf);
 
     // Add sample to histogram
@@ -173,7 +173,7 @@ void pf_init(pf_t *pf, pf_vector_t mean, pf_matrix_t cov)
 
 
 // Initialize the filter using some model
-void pf_init_model(pf_t *pf, pf_init_model_fn_t init_fn, void *init_data)
+void pf_init_model(pf_t *pf, pf_init_model_fn_t init_fn, pf_zone_model_fn_t zone_fn, void *init_data, void *zone_data)
 {
   int i;
   pf_sample_set_t *set;
@@ -185,13 +185,25 @@ void pf_init_model(pf_t *pf, pf_init_model_fn_t init_fn, void *init_data)
   pf_kdtree_clear(set->kdtree);
 
   set->sample_count = pf->max_samples;
+  set->zone_sample_count = pf->max_zone_samples;
 
   // Compute the new sample poses
   for (i = 0; i < set->sample_count; i++)
   {
     sample = set->samples + i;
-    sample->weight = 1.0 / pf->max_samples;
+    sample->weight = 1.0 / pf->max_samples + pf->max_zone_samples;
     sample->pose = (*init_fn) (init_data);
+
+    // Add sample to histogram
+    pf_kdtree_insert(set->kdtree, sample->pose, sample->weight);
+  }
+
+  // Compute the new sample poses from zone
+  for (i = 0; i < set->zone_sample_count; i++)
+  {
+    sample = set->samples + i;
+    sample->weight = 1.0 / pf->max_samples + pf->max_zone_samples;
+    sample->pose = (*zone_fn) (init_data, zone_data);
 
     // Add sample to histogram
     pf_kdtree_insert(set->kdtree, sample->pose, sample->weight);
@@ -483,7 +495,20 @@ void pf_update_resample(pf_t *pf)
   }
 
 	//TODO: Sample from zone area and assign pose to sample_b
-  
+  // Compute the new sample poses from zone
+  while(set_b->sample_count < pf->max_samples + pf->max_zone_samples)
+  {
+    sample_b = set_b->samples + set_b->sample_count++;
+
+    sample_b->pose = (pf->zone_pose_fn)(pf->random_pose_data, pf->zone_pose_data);
+
+    sample_b->weight = 1.0;
+    total += sample_b->weight;
+
+    // Add sample to histogram
+    pf_kdtree_insert(set_b->kdtree, sample_b->pose, sample_b->weight);
+  }
+
   // Reset averages, to avoid spiraling off into complete randomness.
   if(w_diff > 0.0)
     pf->w_slow = pf->w_fast = 0.0;
@@ -518,7 +543,7 @@ int pf_resample_limit(pf_t *pf, int k)
   int n;
 
   if (k <= 1)
-    return pf->max_samples;
+    return pf->max_samples + pf->max_zone_samples;
 
   a = 1;
   b = 2 / (9 * ((double) k - 1));
@@ -529,8 +554,8 @@ int pf_resample_limit(pf_t *pf, int k)
 
   if (n < pf->min_samples)
     return pf->min_samples;
-  if (n > pf->max_samples)
-    return pf->max_samples;
+  if (n > pf->max_samples + pf->max_zone_samples)
+    return pf->max_samples + pf->max_zone_samples;
   
   return n;
 }
