@@ -496,7 +496,8 @@ void pf_update_resample(pf_t *pf)
 
 	//TODO: Sample from zone area and assign pose to sample_b
   // Compute the new sample poses from zone
-  while(set_b->sample_count < pf->max_samples + pf->max_zone_samples)
+	const int n_zone_samples = set_b->sample_count + pf->max_zone_samples;
+  while(set_b->sample_count < n_zone_samples)
   {
     sample_b = set_b->samples + set_b->sample_count++;
 
