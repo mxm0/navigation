@@ -10,8 +10,8 @@ find_package(catkin REQUIRED
             tf
             dynamic_reconfigure
             nav_msgs
-            std_srvs
-						robot_localizer
+            robot_localizer
+            particle_filter_msgs
         )
 
 find_package(Boost REQUIRED)
@@ -27,7 +27,7 @@ catkin_package(
         roscpp
         dynamic_reconfigure
         tf
-  CATKIN_DEPENDS nav_msgs std_srvs robot_localizer
+  CATKIN_DEPENDS nav_msgs std_srvs robot_localizer particle_filter_msgs
   INCLUDE_DIRS include
   LIBRARIES amcl_sensors amcl_map amcl_pf
 )

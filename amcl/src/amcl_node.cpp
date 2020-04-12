@@ -45,7 +45,6 @@
 // Messages that I need
 #include "sensor_msgs/LaserScan.h"
 #include "geometry_msgs/PoseWithCovarianceStamped.h"
-#include "geometry_msgs/PoseArray.h"
 #include "geometry_msgs/Pose.h"
 #include "geometry_msgs/PolygonStamped.h"
 #include "nav_msgs/GetMap.h"
@@ -53,6 +52,7 @@
 #include "std_srvs/Empty.h"
 #include "std_msgs/Int32.h"
 #include "robot_localizer/GetZones.h"
+#include "particle_filter_msgs/ParticleCloud.h"
 
 // For transform support
 #include "tf/transform_broadcaster.h"
@@ -279,13 +279,13 @@ class AmclNode
     void checkLaserReceived(const ros::TimerEvent& event);
 
 		// Zones
-		std::string zones_topic_;
-		std::string predicted_zone_topic_;
+    std::string zones_topic_;
+    std::string predicted_zone_topic_;
     bool zone_sampling_;
-		int max_zone_particles_;
-		area_t* area_;
-		void requestZones();
-		void predictedZoneReceived(const std_msgs::Int32ConstPtr& zone);
+    int max_zone_particles_;
+    area_t* area_;
+    void requestZones();
+    void predictedZoneReceived(const std_msgs::Int32ConstPtr& zone);
     static pf_vector_t zonePoseGenerator(void* arg_map, void* arg_area);
     area_t* convertZones(const std::vector<geometry_msgs::PolygonStamped>& zone_msg);
 };
@@ -443,8 +443,8 @@ AmclNode::AmclNode() :
 
 	// Retrieve public zones parameters
   private_nh_.param("zone_sampling", zone_sampling_, true);
-	nh_.param<std::string>("zones_topic", zones_topic_, "zone_classifier/zones");
-	nh_.param<std::string>("predicted_zone_topic", predicted_zone_topic_, "zone_classifier/predicted_zone");
+  nh_.param<std::string>("zones_topic", zones_topic_, "zone_classifier/zones");
+  nh_.param<std::string>("predicted_zone_topic", predicted_zone_topic_, "zone_classifier/predicted_zone");
   private_nh_.param("max_zone_particles", max_zone_particles_, 100);
 
   transform_tolerance_.fromSec(tmp_tol);
@@ -462,7 +462,7 @@ AmclNode::AmclNode() :
   tf_ = new TransformListenerWrapper();
 
   pose_pub_ = nh_.advertise<geometry_msgs::PoseWithCovarianceStamped>("amcl_pose", 2, true);
-  particlecloud_pub_ = nh_.advertise<geometry_msgs::PoseArray>("particlecloud", 2, true);
+  particlecloud_pub_ = nh_.advertise<particle_filter_msgs::ParticleCloud>("particlecloud", 2, true);
   global_loc_srv_ = nh_.advertiseService("global_localization", 
 					 &AmclNode::globalLocalizationCallback,
                                          this);
@@ -582,7 +582,6 @@ void AmclNode::reconfigureCB(AMCLConfig &config, uint32_t level)
   beam_skip_distance_ = config.beam_skip_distance; 
   beam_skip_threshold_ = config.beam_skip_threshold; 
 
-	// TODO: Pass zones to pf
   pf_ = pf_alloc(min_particles_, max_particles_, max_zone_particles_,
                  alpha_slow_, alpha_fast_,
                  (pf_init_model_fn_t)AmclNode::uniformPoseGenerator,
@@ -886,7 +885,6 @@ AmclNode::handleMapMessage(const nav_msgs::OccupancyGrid& msg)
         free_space_indices.push_back(std::make_pair(i,j));
 #endif
   // Create the particle filter
-	// TODO: Pass zones to pf
   pf_ = pf_alloc(min_particles_, max_particles_, max_zone_particles_,
                  alpha_slow_, alpha_fast_,
                  (pf_init_model_fn_t)AmclNode::uniformPoseGenerator,
@@ -1335,7 +1333,7 @@ AmclNode::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan)
     // Resample the particles
     if(!(++resample_count_ % resample_interval_))
     {
-      pf_update_resample(pf_); // TODO: Add samples from predicted zone
+      pf_update_resample(pf_);
       resampled = true;
     }
 
@@ -1345,16 +1343,18 @@ AmclNode::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan)
     // Publish the resulting cloud
     // TODO: set maximum rate for publishing
     if (!m_force_update) {
-      geometry_msgs::PoseArray cloud_msg;
+      particle_filter_msgs::ParticleCloud cloud_msg;
       cloud_msg.header.stamp = ros::Time::now();
       cloud_msg.header.frame_id = global_frame_id_;
-      cloud_msg.poses.resize(set->sample_count);
+      cloud_msg.poses.poses.resize(set->sample_count);
+      cloud_msg.weights.resize(set->sample_count);
       for(int i=0;i<set->sample_count;i++)
       {
         tf::poseTFToMsg(tf::Pose(tf::createQuaternionFromYaw(set->samples[i].pose.v[2]),
                                  tf::Vector3(set->samples[i].pose.v[0],
                                            set->samples[i].pose.v[1], 0)),
-                        cloud_msg.poses[i]);
+                        cloud_msg.poses.poses[i]);
+        cloud_msg.weights[i] = set->samples[i].weight;
       }
       particlecloud_pub_.publish(cloud_msg);
     }
@@ -1645,7 +1645,6 @@ AmclNode::requestZones()
 area_t*
 AmclNode::convertZones(const std::vector<geometry_msgs::PolygonStamped>& zones_msg)
 {
-	//TODO: Store zones and respective coordinates for min/max
   area_t* area = area_alloc();
   area->zones = (zone_t*)malloc(sizeof(zone_t)*zones_msg.size());
 
