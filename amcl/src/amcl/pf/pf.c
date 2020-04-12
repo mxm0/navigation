@@ -494,20 +494,22 @@ void pf_update_resample(pf_t *pf)
       break;
   }
 
-	//TODO: Sample from zone area and assign pose to sample_b
   // Compute the new sample poses from zone
-	const int n_zone_samples = set_b->sample_count + pf->max_zone_samples;
-  while(set_b->sample_count < n_zone_samples)
+  if (pf->zone_sampling)
   {
-    sample_b = set_b->samples + set_b->sample_count++;
+    const int n_zone_samples = set_b->sample_count + pf->max_zone_samples;
+    while(set_b->sample_count < n_zone_samples)
+    {
+      sample_b = set_b->samples + set_b->sample_count++;
 
-    sample_b->pose = (pf->zone_pose_fn)(pf->random_pose_data, pf->zone_pose_data);
+      sample_b->pose = (pf->zone_pose_fn)(pf->random_pose_data, pf->zone_pose_data);
 
-    sample_b->weight = 1.0;
-    total += sample_b->weight;
+      sample_b->weight = 1.0;
+      total += sample_b->weight;
 
-    // Add sample to histogram
-    pf_kdtree_insert(set_b->kdtree, sample_b->pose, sample_b->weight);
+      // Add sample to histogram
+      pf_kdtree_insert(set_b->kdtree, sample_b->pose, sample_b->weight);
+    }
   }
 
   // Reset averages, to avoid spiraling off into complete randomness.
@@ -696,6 +698,11 @@ void pf_cluster_stats(pf_t *pf, pf_sample_set_t *set)
 void pf_set_selective_resampling(pf_t *pf, int selective_resampling)
 {
   pf->selective_resampling = selective_resampling;
+}
+
+void pf_set_zone_sampling(pf_t *pf, int zone_sampling)
+{
+  pf->zone_sampling = zone_sampling;
 }
 
 // Compute the CEP statistics (mean and variance).

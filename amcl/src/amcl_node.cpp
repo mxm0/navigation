@@ -281,7 +281,7 @@ class AmclNode
 		// Zones
 		std::string zones_topic_;
 		std::string predicted_zone_topic_;
-    bool use_zones_;
+    bool zone_sampling_;
 		int max_zone_particles_;
 		area_t* area_;
 		void requestZones();
@@ -442,7 +442,7 @@ AmclNode::AmclNode() :
   private_nh_.param("tf_broadcast", tf_broadcast_, true);
 
 	// Retrieve public zones parameters
-	nh_.param<bool>("use_zones", use_zones_, true);
+  private_nh_.param("zone_sampling", zone_sampling_, true);
 	nh_.param<std::string>("zones_topic", zones_topic_, "zone_classifier/zones");
 	nh_.param<std::string>("predicted_zone_topic", predicted_zone_topic_, "zone_classifier/predicted_zone");
   private_nh_.param("max_zone_particles", max_zone_particles_, 100);
@@ -497,7 +497,7 @@ AmclNode::AmclNode() :
                                        boost::bind(&AmclNode::checkLaserReceived, this, _1));
 
 	// Zones
-	if(use_zones_) {
+	if(zone_sampling_) {
 		requestZones();
 		predicted_zone_sub_ = nh_.subscribe(predicted_zone_topic_, 1, &AmclNode::predictedZoneReceived, this);
 	}
@@ -590,6 +590,7 @@ void AmclNode::reconfigureCB(AMCLConfig &config, uint32_t level)
 								 (pf_zone_model_fn_t)AmclNode::zonePoseGenerator,
 								 (void *) area_);
   pf_set_selective_resampling(pf_, selective_resampling_);
+  pf_set_zone_sampling(pf_, zone_sampling_);
   pf_err_ = config.kld_err; 
   pf_z_ = config.kld_z; 
   pf_->pop_err = pf_err_;
@@ -893,6 +894,7 @@ AmclNode::handleMapMessage(const nav_msgs::OccupancyGrid& msg)
 								 (pf_zone_model_fn_t)AmclNode::zonePoseGenerator,
 								 (void*) area_);
   pf_set_selective_resampling(pf_, selective_resampling_);
+  pf_set_zone_sampling(pf_, zone_sampling_);
   pf_->pop_err = pf_err_;
   pf_->pop_z = pf_z_;
 

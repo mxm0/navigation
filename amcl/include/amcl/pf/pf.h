@@ -148,6 +148,9 @@ typedef struct _pf_t
 
   // boolean parameter to enamble/diable selective resampling
   int selective_resampling;
+
+  // boolean paramter to enable/disable zone sampling
+  int zone_sampling;
 } pf_t;
 
 
@@ -177,6 +180,9 @@ void pf_update_resample(pf_t *pf);
 
 // set selective resampling parameter
 void pf_set_selective_resampling(pf_t *pf, int selective_resampling);
+
+// set zone sampling parameter
+void pf_set_zone_sampling(pf_t *pf, int zone_sampling);
 
 // Compute the CEP statistics (mean and variance).
 void pf_get_cep_stats(pf_t *pf, pf_vector_t *mean, double *var);
