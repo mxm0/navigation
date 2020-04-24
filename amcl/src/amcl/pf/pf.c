@@ -88,7 +88,7 @@ pf_t *pf_alloc(int min_samples, int max_samples, int max_zone_samples,
       sample->pose.v[0] = 0.0;
       sample->pose.v[1] = 0.0;
       sample->pose.v[2] = 0.0;
-      sample->weight = 1.0 / max_samples + max_zone_samples;
+      sample->weight = 1.0 / (max_samples + max_zone_samples);
     }
 
     // HACK: is 3 times max_samples enough?
@@ -151,7 +151,7 @@ void pf_init(pf_t *pf, pf_vector_t mean, pf_matrix_t cov)
   for (i = 0; i < set->sample_count; i++)
   {
     sample = set->samples + i;
-    sample->weight = 1.0 / pf->max_samples + pf->max_zone_samples;
+    sample->weight = 1.0 / (pf->max_samples + pf->max_zone_samples);
     sample->pose = pf_pdf_gaussian_sample(pdf);
 
     // Add sample to histogram
@@ -191,7 +191,7 @@ void pf_init_model(pf_t *pf, pf_init_model_fn_t init_fn, pf_zone_model_fn_t zone
   for (i = 0; i < set->sample_count; i++)
   {
     sample = set->samples + i;
-    sample->weight = 1.0 / pf->max_samples + pf->max_zone_samples;
+    sample->weight = 1.0 / (pf->max_samples + pf->max_zone_samples);
     sample->pose = (*init_fn) (init_data);
 
     // Add sample to histogram
@@ -202,7 +202,7 @@ void pf_init_model(pf_t *pf, pf_init_model_fn_t init_fn, pf_zone_model_fn_t zone
   for (i = 0; i < set->zone_sample_count; i++)
   {
     sample = set->samples + i;
-    sample->weight = 1.0 / pf->max_samples + pf->max_zone_samples;
+    sample->weight = 1.0 / (pf->max_samples + pf->max_zone_samples);
     sample->pose = (*zone_fn) (init_data, zone_data);
 
     // Add sample to histogram
