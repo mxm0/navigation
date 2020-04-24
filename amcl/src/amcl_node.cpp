@@ -479,6 +479,11 @@ AmclNode::AmclNode() :
                                                    this, _1));
   initial_pose_sub_ = nh_.subscribe("initialpose", 2, &AmclNode::initialPoseReceived, this);
 
+  if(zone_sampling_) {
+    requestZones();
+    predicted_zone_sub_ = nh_.subscribe(predicted_zone_topic_, 1, &AmclNode::predictedZoneReceived, this);
+  }
+
   if(use_map_topic_) {
     map_sub_ = nh_.subscribe("map", 1, &AmclNode::mapReceived, this);
     ROS_INFO("Subscribed to map topic.");
@@ -496,11 +501,6 @@ AmclNode::AmclNode() :
   check_laser_timer_ = nh_.createTimer(laser_check_interval_, 
                                        boost::bind(&AmclNode::checkLaserReceived, this, _1));
 
-	// Zones
-	if(zone_sampling_) {
-		requestZones();
-		predicted_zone_sub_ = nh_.subscribe(predicted_zone_topic_, 1, &AmclNode::predictedZoneReceived, this);
-	}
 }
 
 void AmclNode::reconfigureCB(AMCLConfig &config, uint32_t level)
