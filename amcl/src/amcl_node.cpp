@@ -1330,15 +1330,7 @@ AmclNode::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan)
 
     pf_odom_pose_ = pose;
 
-    // Resample the particles
-    if(!(++resample_count_ % resample_interval_))
-    {
-      pf_update_resample(pf_);
-      resampled = true;
-    }
-
     pf_sample_set_t* set = pf_->sets + pf_->current_set;
-    ROS_DEBUG("Num samples: %d\n", set->sample_count);
 
     // Publish the resulting cloud
     // TODO: set maximum rate for publishing
@@ -1348,7 +1340,7 @@ AmclNode::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan)
       cloud_msg.header.frame_id = global_frame_id_;
       cloud_msg.poses.poses.resize(set->sample_count);
       cloud_msg.weights.resize(set->sample_count);
-      for(int i=0;i<set->sample_count;i++)
+      for(int i = 0; i < set->sample_count; i++)
       {
         tf::poseTFToMsg(tf::Pose(tf::createQuaternionFromYaw(set->samples[i].pose.v[2]),
                                  tf::Vector3(set->samples[i].pose.v[0],
@@ -1358,6 +1350,16 @@ AmclNode::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan)
       }
       particlecloud_pub_.publish(cloud_msg);
     }
+
+    // Resample the particles
+    if(!(++resample_count_ % resample_interval_))
+    {
+      pf_update_resample(pf_);
+      resampled = true;
+    }
+
+    set = pf_->sets + pf_->current_set;
+    ROS_DEBUG("Num samples: %d\n", set->sample_count);
   }
 
   if(resampled || force_publication)
