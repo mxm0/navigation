@@ -199,14 +199,16 @@ void pf_init_model(pf_t *pf, pf_init_model_fn_t init_fn, pf_zone_model_fn_t zone
   }
 
   // Compute the new sample poses from zone
-  for (i = 0; i < set->zone_sample_count; i++)
-  {
-    sample = set->samples + i;
-    sample->weight = 1.0 / (pf->max_samples + pf->max_zone_samples);
-    sample->pose = (*zone_fn) (init_data, zone_data);
+  if (pf->zone_sampling) {
+    for (i = 0; i < set->zone_sample_count; i++)
+    {
+      sample = set->samples + i;
+      sample->weight = 1.0 / (pf->max_samples + pf->max_zone_samples);
+      sample->pose = (*zone_fn) (init_data, zone_data);
 
-    // Add sample to histogram
-    pf_kdtree_insert(set->kdtree, sample->pose, sample->weight);
+      // Add sample to histogram
+      pf_kdtree_insert(set->kdtree, sample->pose, sample->weight);
+    }
   }
 
   pf->w_slow = pf->w_fast = 0.0;
