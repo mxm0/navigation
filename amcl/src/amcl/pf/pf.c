@@ -42,7 +42,7 @@ static int pf_resample_limit(pf_t *pf, int k);
 
 
 // Create a new filter
-pf_t *pf_alloc(int min_samples, int max_samples, int max_zone_samples,
+pf_t *pf_alloc(int min_samples, int max_samples, int max_zone_samples, int max_active_zones,
                double alpha_slow, double alpha_fast,
                pf_init_model_fn_t random_pose_fn, void *random_pose_data,
 							 pf_zone_model_fn_t zone_pose_fn, void *zone_pose_data)
@@ -63,7 +63,8 @@ pf_t *pf_alloc(int min_samples, int max_samples, int max_zone_samples,
 
   pf->min_samples = min_samples;
   pf->max_samples = max_samples;
-  pf->max_zone_samples = max_zone_samples;
+  pf->max_active_zones = max_active_zones;
+  pf->max_zone_samples = max_zone_samples * max_active_zones;
 
   // Control parameters for the population size calculation.  [err] is
   // the max error between the true distribution and the estimated
@@ -80,7 +81,7 @@ pf_t *pf_alloc(int min_samples, int max_samples, int max_zone_samples,
     set = pf->sets + j;
       
     set->sample_count = max_samples;
-    set->samples = calloc(max_samples + max_zone_samples, sizeof(pf_sample_t));
+    set->samples = calloc(max_samples + pf->max_zone_samples, sizeof(pf_sample_t));
 
     for (i = 0; i < set->sample_count; i++)
     {
@@ -88,14 +89,14 @@ pf_t *pf_alloc(int min_samples, int max_samples, int max_zone_samples,
       sample->pose.v[0] = 0.0;
       sample->pose.v[1] = 0.0;
       sample->pose.v[2] = 0.0;
-      sample->weight = 1.0 / (max_samples + max_zone_samples);
+      sample->weight = 1.0 / (max_samples + pf->max_zone_samples);
     }
 
     // HACK: is 3 times max_samples enough?
-    set->kdtree = pf_kdtree_alloc(3 * max_samples + max_zone_samples);
+    set->kdtree = pf_kdtree_alloc(3 * max_samples + pf->max_zone_samples);
 
     set->cluster_count = 0;
-    set->cluster_max_count = max_samples + max_zone_samples;
+    set->cluster_max_count = max_samples + pf->max_zone_samples;
     set->clusters = calloc(set->cluster_max_count, sizeof(pf_cluster_t));
 
     set->mean = pf_vector_zero();
@@ -111,6 +112,9 @@ pf_t *pf_alloc(int min_samples, int max_samples, int max_zone_samples,
   //set converged to 0
   pf_init_converged(pf);
 
+  pf->active_zones = (int*)calloc(max_active_zones, sizeof(int));
+  pf->zones_likelihood = (double*)calloc(max_active_zones, sizeof(double));
+
   return pf;
 }
 
@@ -125,6 +129,9 @@ void pf_free(pf_t *pf)
     pf_kdtree_free(pf->sets[i].kdtree);
     free(pf->sets[i].samples);
   }
+
+  free(pf->active_zones);
+  free(pf->zones_likelihood);
   free(pf);
   
   return;
@@ -185,7 +192,6 @@ void pf_init_model(pf_t *pf, pf_init_model_fn_t init_fn, pf_zone_model_fn_t zone
   pf_kdtree_clear(set->kdtree);
 
   set->sample_count = pf->max_samples;
-  set->zone_sample_count = pf->max_zone_samples;
 
   // Compute the new sample poses
   for (i = 0; i < set->sample_count; i++)
@@ -196,19 +202,6 @@ void pf_init_model(pf_t *pf, pf_init_model_fn_t init_fn, pf_zone_model_fn_t zone
 
     // Add sample to histogram
     pf_kdtree_insert(set->kdtree, sample->pose, sample->weight);
-  }
-
-  // Compute the new sample poses from zone
-  if (pf->zone_sampling) {
-    for (i = 0; i < set->zone_sample_count; i++)
-    {
-      sample = set->samples + i;
-      sample->weight = 1.0 / (pf->max_samples + pf->max_zone_samples);
-      sample->pose = (*zone_fn) (init_data, zone_data);
-
-      // Add sample to histogram
-      pf_kdtree_insert(set->kdtree, sample->pose, sample->weight);
-    }
   }
 
   pf->w_slow = pf->w_fast = 0.0;
@@ -435,6 +428,7 @@ void pf_update_resample(pf_t *pf)
   i = 0;
   m = 0;
   */
+
   while(set_b->sample_count < pf->max_samples)
   {
     sample_b = set_b->samples + set_b->sample_count++;
@@ -496,21 +490,26 @@ void pf_update_resample(pf_t *pf)
       break;
   }
 
-  // Compute the new sample poses from zone
+  // Compute sample poses from each active zone
   if (pf->zone_sampling)
   {
-    const int n_zone_samples = set_b->sample_count + pf->max_zone_samples;
-    while(set_b->sample_count < n_zone_samples)
+    for (int idx = 0; idx < pf->max_active_zones; idx++)
     {
-      sample_b = set_b->samples + set_b->sample_count++;
+      const int n_zone_samples = *(pf->zones_likelihood + idx) * pf->max_zone_samples / pf->max_active_zones;
+      for (i = 0; i < n_zone_samples; i++)
+      {
+        sample_b = set_b->samples + set_b->sample_count++;
 
-      sample_b->pose = (pf->zone_pose_fn)(pf->random_pose_data, pf->zone_pose_data);
+        sample_b->pose = (pf->zone_pose_fn)(pf->random_pose_data,
+                                            pf->zone_pose_data,
+                                            *(pf->active_zones + idx));
 
-      sample_b->weight = 1.0;
-      total += sample_b->weight;
+        sample_b->weight = 1.0;
+        total += sample_b->weight;
 
-      // Add sample to histogram
-      pf_kdtree_insert(set_b->kdtree, sample_b->pose, sample_b->weight);
+        // Add sample to histogram
+        pf_kdtree_insert(set_b->kdtree, sample_b->pose, sample_b->weight);
+      }
     }
   }
 
@@ -548,7 +547,7 @@ int pf_resample_limit(pf_t *pf, int k)
   int n;
 
   if (k <= 1)
-    return pf->max_samples + pf->max_zone_samples;
+    return pf->max_samples;
 
   a = 1;
   b = 2 / (9 * ((double) k - 1));
@@ -559,8 +558,8 @@ int pf_resample_limit(pf_t *pf, int k)
 
   if (n < pf->min_samples)
     return pf->min_samples;
-  if (n > pf->max_samples + pf->max_zone_samples)
-    return pf->max_samples + pf->max_zone_samples;
+  if (n > pf->max_samples)
+    return pf->max_samples;
   
   return n;
 }

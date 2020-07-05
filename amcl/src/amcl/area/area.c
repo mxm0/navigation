@@ -17,9 +17,6 @@ area_t *area_alloc(void)
   // Allocate storage for main map
   area->zones = (zone_t*) NULL;
 
-	// Assume first zone is active
-	area->active_zone = 0;
-  
   return area;
 }
 

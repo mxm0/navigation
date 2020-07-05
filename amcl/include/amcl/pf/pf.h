@@ -47,7 +47,8 @@ typedef pf_vector_t (*pf_init_model_fn_t) (void *init_data);
 // Function prototype for the zone model; generates a sample pose from
 // a zone.
 typedef pf_vector_t (*pf_zone_model_fn_t) (void *init_data,
-																					 void *zone_data);
+																					 void *zone_data,
+                                           int active_zone_idx);
 
 // Function prototype for the action model; generates a sample pose from
 // an appropriate distribution
@@ -118,7 +119,7 @@ typedef struct _pf_sample_set_t
 typedef struct _pf_t
 {
   // This min and max number of samples
-  int min_samples, max_samples, max_zone_samples;
+  int min_samples, max_samples, max_zone_samples, max_active_zones;
 
   // Population size parameters
   double pop_err, pop_z;
@@ -151,11 +152,17 @@ typedef struct _pf_t
 
   // boolean paramter to enable/disable zone sampling
   int zone_sampling;
+
+  // array of active zones
+  int *active_zones;
+
+  // array of zones likelihood
+  double *zones_likelihood;
 } pf_t;
 
 
 // Create a new filter
-pf_t *pf_alloc(int min_samples, int max_samples, int max_zone_samples,
+pf_t *pf_alloc(int min_samples, int max_samples, int max_zone_samples, int max_active_zones,
                double alpha_slow, double alpha_fast,
                pf_init_model_fn_t random_pose_fn, void *random_pose_data,
 							 pf_zone_model_fn_t zone_pose_fn, void *zone_pose_data);

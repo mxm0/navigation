@@ -23,9 +23,6 @@ typedef struct
   // Area is an array  of zones
   zone_t *zones;
 
-	// Active zone
-	int active_zone;
-
 } area_t;
 
 
@@ -34,10 +31,10 @@ typedef struct
  * Basic area functions
  **************************************************************************/
 
-// Create a new (empty) map
+// Create a new (empty) area
 area_t *area_alloc(void);
 
-// Destroy a map
+// Destroy an area 
 void area_free(area_t *area);
 
 #ifdef __cplusplus
